@@ -675,6 +675,56 @@ parseStatement: true, parseSourceElement: true */
 
     // 7.8.3 Numeric Literals
 
+    function scanHexLiteral(start) {
+        var number = '';
+
+        while (index < length) {
+            if (!isHexDigit(source[index])) {
+                break;
+            }
+            number += source[index++];
+        }
+
+        if (number.length === 0) {
+            throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
+        }
+
+        if (isIdentifierStart(source.charCodeAt(index))) {
+            throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
+        }
+
+        return {
+            type: Token.NumericLiteral,
+            value: parseInt('0x' + number, 16),
+            lineNumber: lineNumber,
+            lineStart: lineStart,
+            range: [start, index]
+        };
+    }
+
+    function scanOctalLiteral(start) {
+        var number = '0' + source[index++];
+        while (index < length) {
+            if (!isOctalDigit(source[index])) {
+                break;
+            }
+            number += source[index++];
+        }
+
+        if (isIdentifierStart(source.charCodeAt(index)) || isDecimalDigit(source.charCodeAt(index))) {
+            throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
+        }
+
+        return {
+            type: Token.NumericLiteral,
+            value: parseInt(number, 8),
+            octal: true,
+            lineNumber: lineNumber,
+            lineStart: lineStart,
+            range: [start, index]
+        };
+    }
+
     function scanNumericLiteral() {
         var number, start, ch;
 
@@ -692,58 +742,11 @@ parseStatement: true, parseSourceElement: true */
             // Octal number starts with '0'.
             if (number === '0') {
                 if (ch === 'x' || ch === 'X') {
-                    number += source[index++];
-                    while (index < length) {
-                        ch = source[index];
-                        if (!isHexDigit(ch)) {
-                            break;
-                        }
-                        number += source[index++];
-                    }
-
-                    if (number.length <= 2) {
-                        // only 0x
-                        throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
-                    }
-
-                    if (index < length) {
-                        ch = source[index];
-                        if (isIdentifierStart(ch.charCodeAt(0))) {
-                            throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
-                        }
-                    }
-                    return {
-                        type: Token.NumericLiteral,
-                        value: parseInt(number, 16),
-                        lineNumber: lineNumber,
-                        lineStart: lineStart,
-                        range: [start, index]
-                    };
+                    ++index;
+                    return scanHexLiteral(start);
                 }
                 if (isOctalDigit(ch)) {
-                    number += source[index++];
-                    while (index < length) {
-                        ch = source[index];
-                        if (!isOctalDigit(ch)) {
-                            break;
-                        }
-                        number += source[index++];
-                    }
-
-                    if (index < length) {
-                        ch = source.charCodeAt(index);
-                        if (isIdentifierStart(ch) || isDecimalDigit(ch)) {
-                            throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
-                        }
-                    }
-                    return {
-                        type: Token.NumericLiteral,
-                        value: parseInt(number, 8),
-                        octal: true,
-                        lineNumber: lineNumber,
-                        lineStart: lineStart,
-                        range: [start, index]
-                    };
+                    return scanOctalLiteral(start);
                 }
 
                 // decimal number starts with '0' such as '09' is illegal.
@@ -752,24 +755,18 @@ parseStatement: true, parseSourceElement: true */
                 }
             }
 
-            while (index < length) {
-                if (!isDecimalDigit(source.charCodeAt(index))) {
-                    ch = source[index];
-                    break;
-                }
+            while (isDecimalDigit(source.charCodeAt(index))) {
                 number += source[index++];
             }
+            ch = source[index];
         }
 
         if (ch === '.') {
             number += source[index++];
-            while (index < length) {
-                if (!isDecimalDigit(source.charCodeAt(index))) {
-                    ch = source[index];
-                    break;
-                }
+            while (isDecimalDigit(source.charCodeAt(index))) {
                 number += source[index++];
             }
+            ch = source[index];
         }
 
         if (ch === 'e' || ch === 'E') {
@@ -779,30 +776,17 @@ parseStatement: true, parseSourceElement: true */
             if (ch === '+' || ch === '-') {
                 number += source[index++];
             }
-
-            ch = source[index];
-            if (ch && isDecimalDigit(ch.charCodeAt(0))) {
-                number += source[index++];
-                while (index < length) {
-                    if (!isDecimalDigit(source.charCodeAt(index))) {
-                        ch = source[index];
-                        break;
-                    }
+            if (isDecimalDigit(source.charCodeAt(index))) {
+                while (isDecimalDigit(source.charCodeAt(index))) {
                     number += source[index++];
                 }
             } else {
-                ch = 'character ' + ch;
-                if (index >= length) {
-                    ch = '<end>';
-                }
                 throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
             }
         }
 
-        if (index < length) {
-            if (isIdentifierStart(source.charCodeAt(index))) {
-                throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
-            }
+        if (isIdentifierStart(source.charCodeAt(index))) {
+            throwError({}, Messages.UnexpectedToken, 'ILLEGAL');
         }
 
         return {
@@ -1097,6 +1081,10 @@ parseStatement: true, parseSourceElement: true */
     SyntaxTreeDelegate = {
 
         name: 'SyntaxTree',
+
+        postProcess: function (node) {
+            return node;
+        },
 
         createArrayExpression: function (elements) {
             return {
@@ -3399,6 +3387,7 @@ parseStatement: true, parseSourceElement: true */
                         column: this.loc.end.column
                     }
                 };
+                node = delegate.postProcess(node);
             }
         };
 
@@ -3417,6 +3406,7 @@ parseStatement: true, parseSourceElement: true */
                         column: this.loc.end.column
                     }
                 };
+                node = delegate.postProcess(node);
             }
         };
 
@@ -3550,11 +3540,13 @@ parseStatement: true, parseSourceElement: true */
                             start: start,
                             end: end
                         };
+                        node = delegate.postProcess(node);
                     } else if (typeof node.loc === 'undefined') {
                         node.loc = {
                             start: node.left.loc.start,
                             end: node.right.loc.end
                         };
+                        node = delegate.postProcess(node);
                     }
                 }
             }
@@ -3710,6 +3702,26 @@ parseStatement: true, parseSourceElement: true */
         }
     }
 
+    // This is used to modify the delegate.
+
+    function extend(object, properties) {
+        var entry, result = {};
+
+        for (entry in object) {
+            if (object.hasOwnProperty(entry)) {
+                result[entry] = object[entry];
+            }
+        }
+
+        for (entry in properties) {
+            if (properties.hasOwnProperty(entry)) {
+                result[entry] = properties[entry];
+            }
+        }
+
+        return result;
+    }
+
     function parse(code, options) {
         var program, toString;
 
@@ -3737,6 +3749,15 @@ parseStatement: true, parseSourceElement: true */
         if (typeof options !== 'undefined') {
             extra.range = (typeof options.range === 'boolean') && options.range;
             extra.loc = (typeof options.loc === 'boolean') && options.loc;
+
+            if (extra.loc && options.source !== null && options.source !== undefined) {
+                delegate = extend(delegate, {
+                    'postProcess': function (node) {
+                        node.loc.source = toString(options.source);
+                        return node;
+                    }
+                });
+            }
 
             if (typeof options.tokens === 'boolean' && options.tokens) {
                 extra.tokens = [];
